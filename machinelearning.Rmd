@@ -1,0 +1,120 @@
+#Practical Machine Learning - Project
+
+##Loading the data
+
+First, we need to download the data:
+
+```{r}
+library(caret)
+library(randomForest)
+
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",temp)
+training <- read.csv(temp)
+unlink(temp)
+```
+
+##Exploratory Analysis and Preprocessing
+
+Then we take a look at the data:
+
+```{r}
+str(training)
+```
+
+We can see throught the results of the structure of the data there are lots of data with NA values in them. This could prove troublesome for us and something should be done about that. Let's see the extent of this problem.
+
+```{r}
+sapply(training, function(x) sum(is.na(x))/nrow(training))
+```
+
+Here we can see there are many columns (variables) that have NA values more than 97% of the time. Also, it seems that there are few NA values in other variables. Therefore, we can assume that if we get rid of these columns with NA, we will get rid of all 
+NAs. Let's subset the training set to the columns without NAs and also get rid of the first 7 columns, which are irrelevant:
+
+```{r}
+training <- training[,sapply(training, function(x) sum(is.na(x))/nrow(training))==0]
+training <- training[,-c(1:7)]
+dim(training)
+str(training)
+```
+
+We can still see many variables identified as factors, but which are in fact real numbers. The probable reason R identified as factores were because there were numbers such as #DIV/0!, etc. We have to devise a strategy to see what can be done about these variables:
+
+```{r}
+summary(training["kurtosis_roll_forearm"])
+```
+
+We can see that this variable 'kurtosis_roll_forearm' has 19216 empty values. Therefore, it makes no sense to recover it by coercing it to be numeric. We have to get rid of it. Let's see how many other variables are in the same situation.
+
+```{r}
+sapply(training, function(x) sum(x=="")/nrow(training))
+```
+
+Same thing as NAs, we have to get rid of the variables that have more than 97% of empty values:
+
+```{r}
+training <- training[,sapply(training, function(x) sum(x=="")/nrow(training))==0]
+dim(training)
+```
+
+Here we are left with almost half the number of variables we had when we started. No we can create a test and training set from the data:
+
+```{r}
+set.seed(62433)
+trainindex <- createDataPartition(training$classe, p = 0.75, list = FALSE)
+
+trainset <- training[trainindex, ]
+testset <- training[-trainindex, ]
+```
+
+##Fitting the Model
+
+We will use the random forest model from the randomForest package:
+
+```{r}
+rfmodel <- randomForest(classe~.,data=trainset, method="class")
+```
+
+And use the predict function to compare how the model does in the training set:
+
+```{r}
+ptraining <- predict(rfmodel, trainset)
+print(confusionMatrix(ptraining, trainset$classe))
+```
+
+We can see that the model does quite well, as is expected. However, we want to minimize the chances of overfitting, so let's see how it performs in the test set:
+
+```{r}
+ptesting <- predict(rfmodel, testset)
+print(confusionMatrix(ptesting, testset$classe))
+```
+
+Still, the accuracy is higher than 99.5%, which indicates the model's performance is satisfactory.
+
+##Predicting Values
+
+Now it is time to predict the 20 values:
+
+```{r}
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",temp)
+testing <- read.csv(temp)
+unlink(temp)
+
+predictiontest <- predict(rfmodel, testing)
+predictiontest
+```
+
+We can see above the predicted values, and using the function below to record those values into files.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictiontest)
+```
